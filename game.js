@@ -49,123 +49,119 @@ document.addEventListener('DOMContentLoaded', () => {
     const assets = {};
     let assetsLoaded = 0;
     const totalAssets = Object.keys(ASSET_PATHS).length;
+    let assetsError = false; // Flag to track if any asset fails
 
     function loadAssets() {
         startButton.disabled = true;
-        for (const key in ASSET_PATHS) {
+        loadingMessage.textContent = 'Loading assets...'; // Initial message
+        assetsError = false; // Reset error flag
+        assetsLoaded = 0; // Reset counter
+
+        const assetKeys = Object.keys(ASSET_PATHS);
+
+        if (assetKeys.length === 0) {
+            loadingMessage.textContent = 'No assets defined. Ready to start.';
+            startButton.disabled = false;
+            console.log("No assets defined. Button enabled.");
+            return;
+        }
+
+        assetKeys.forEach(key => {
             assets[key] = new Image();
             assets[key].src = ASSET_PATHS[key];
+
             assets[key].onload = () => {
+                if (assetsError) return; // If an error already occurred, stop processing further successful loads for feedback
+
                 assetsLoaded++;
                 loadingMessage.textContent = `Loading assets... (${assetsLoaded}/${totalAssets})`;
-                if (assetsLoaded === totalAssets) {
-                    loadingMessage.textContent = 'Assets Loaded!';
+                console.log(`Loaded: ${key} (${assetsLoaded}/${totalAssets})`);
+
+                if (assetsLoaded === totalAssets && !assetsError) {
+                    loadingMessage.textContent = 'Assets Loaded! Click Start.';
                     startButton.disabled = false;
-                    console.log("All assets loaded!");
+                    console.log("All assets loaded successfully!");
                 }
             };
+
             assets[key].onerror = () => {
-                console.error(`Failed to load asset: ${ASSET_PATHS[key]}`);
-                loadingMessage.textContent = `Error loading: ${key}. Check console.`;
+                if (assetsError) return; // Only report the first error to avoid spamming the message
+                assetsError = true;
+                console.error(`ERROR: Failed to load asset "${key}" at path: ${ASSET_PATHS[key]}`);
+                loadingMessage.innerHTML = `<strong>Error loading asset: ${key}</strong><br>Path: ${ASSET_PATHS[key]}<br>Please check file exists and path is correct in <code>game.js</code>.<br>Game cannot start.`;
+                startButton.disabled = true; // Ensure button remains disabled
             };
-        }
+        });
     }
+
 
     // Player
     const player = {
         x: 50,
-        y: CANVAS_HEIGHT - 50 - 48, // player height
+        y: CANVAS_HEIGHT - 50 - 48, // player height (initial canvas relative y)
+        worldY: 0, // This will be the absolute altitude
         width: 32,
         height: 48,
         speed: 3,
-        climbSpeedModifier: 1, // For weather effects
+        climbSpeedModifier: 1,
         jumpStrength: 10,
         dy: 0,
         gravity: 0.4,
         onGround: false,
         hasRope: false,
-        energy: 100, // Example
-        image: null // Set after loading
+        energy: 100,
+        image: null
     };
+    player.worldY = player.y; // Initialize worldY
 
     // Camera
     let cameraY = 0;
-    const SUMMIT_ALTITUDE = -1500; // How "high" the summit is (negative because y decreases upwards)
+    const SUMMIT_ALTITUDE = -1500;
 
-    // Ledges, NPCs, Puzzles (Define these based on altitude)
-    // Altitude is relative to player's starting y. Higher = smaller y.
+    // Ledges, NPCs, Puzzles
     const gameElements = [
-        // Ground
-        { type: 'ledge', x: 0, y: CANVAS_HEIGHT - 50, width: CANVAS_WIDTH, height: 50 },
-
-        // Initial Ledges
-        { type: 'ledge', x: 100, y: CANVAS_HEIGHT - 150, width: 150, height: 20 },
-        { type: 'ledge', x: 300, y: CANVAS_HEIGHT - 250, width: 200, height: 20 },
-        { type: 'ledge', x: 50, y: CANVAS_HEIGHT - 380, width: 180, height: 20 },
-
-        // NPC
+        { type: 'ledge', x: 0, worldY: CANVAS_HEIGHT - 50, width: CANVAS_WIDTH, height: 50 },
+        { type: 'ledge', x: 100, worldY: CANVAS_HEIGHT - 150, width: 150, height: 20 },
+        { type: 'ledge', x: 300, worldY: CANVAS_HEIGHT - 250, width: 200, height: 20 },
+        { type: 'ledge', x: 50, worldY: CANVAS_HEIGHT - 380, width: 180, height: 20 },
         {
-            type: 'npc', x: 400, y: CANVAS_HEIGHT - 480,
+            type: 'npc', x: 400, worldY: CANVAS_HEIGHT - 480, width: 32, height: 48,
             id: 'guide1',
-            dialogue: [
-                "Welcome, climber! The path ahead is tricky.",
-                "Take this rope. It might help you with a wide gap later!",
-                "Be wary of the changing weather."
-            ],
+            dialogue: ["Welcome, climber! The path ahead is tricky.", "Take this rope. It might help you with a wide gap later!", "Be wary of the changing weather."],
             item: 'rope'
         },
-        { type: 'ledge', x: 350, y: CANVAS_HEIGHT - 460, width: 150, height: 20 }, // Ledge for NPC
-
-        // Puzzle
+        { type: 'ledge', x: 350, worldY: CANVAS_HEIGHT - 460, width: 150, height: 20 },
         {
-            type: 'puzzle_trigger', x: 100, y: CANVAS_HEIGHT - 650,
+            type: 'puzzle_trigger', x: 100, worldY: CANVAS_HEIGHT - 650, width: 30, height: 30,
             puzzleType: 'simonSays',
             id: 'puzzle1',
             instruction: "The ancient spirits demand a tribute! Repeat the sequence:",
             sequenceLength: 3,
             rewardText: "The spirits are pleased. You feel a surge of energy!"
         },
-        { type: 'ledge', x: 50, y: CANVAS_HEIGHT - 630, width: 200, height: 20 }, // Ledge for puzzle
-
-        // More ledges
-        { type: 'ledge', x: 400, y: CANVAS_HEIGHT - 750, width: 250, height: 20 },
-        { type: 'ledge', x: 200, y: CANVAS_HEIGHT - 900, width: 150, height: 20, requiresRope: true }, // Example of using an item
-        { type: 'ledge', x: 500, y: CANVAS_HEIGHT - 1050, width: 200, height: 20 },
-        { type: 'ledge', x: 100, y: CANVAS_HEIGHT - 1200, width: 300, height: 20 },
-        { type: 'ledge', x: 300, y: CANVAS_HEIGHT - 1400, width: 200, height: 20 },
-
-
-        // Summit element
-        { type: 'summit', x: CANVAS_WIDTH / 2 - 25, y: SUMMIT_ALTITUDE + 70, width: 50, height: 70 }
+        { type: 'ledge', x: 50, worldY: CANVAS_HEIGHT - 630, width: 200, height: 20 },
+        { type: 'ledge', x: 400, worldY: CANVAS_HEIGHT - 750, width: 250, height: 20 },
+        { type: 'ledge', x: 200, worldY: CANVAS_HEIGHT - 900, width: 150, height: 20, requiresRope: true },
+        { type: 'ledge', x: 500, worldY: CANVAS_HEIGHT - 1050, width: 200, height: 20 },
+        { type: 'ledge', x: 100, worldY: CANVAS_HEIGHT - 1200, width: 300, height: 20 },
+        { type: 'ledge', x: 300, worldY: CANVAS_HEIGHT - 1400, width: 200, height: 20 },
+        { type: 'summit', x: CANVAS_WIDTH / 2 - 25, worldY: SUMMIT_ALTITUDE, width: 50, height: 70 } // Note: SUMMIT_ALTITUDE for worldY
     ];
-    // Transform y-coordinates for gameElements to be relative to initial player Y for easier altitude calc
-    gameElements.forEach(el => {
-        if (el.y !== undefined) { // Summit y is already absolute altitude
-            if (el.type !== 'summit') el.initialY = el.y; // Store original for reference if needed
-            el.y = el.y - (CANVAS_HEIGHT - 50); // Make y relative to 0 altitude
-        }
-    });
-
 
     let currentNPC = null;
     let currentPuzzle = null;
     let randomEventActive = null;
     let randomEventTimer = 0;
 
-
-    const keys = {
-        left: false,
-        right: false,
-        up: false, // For climbing/jumping
-        space: false
-    };
+    const keys = { left: false, right: false, up: false, space: false };
 
     function handleKeyDown(e) {
         if (gameState === 'playing') {
             if (e.key === 'ArrowLeft' || e.key === 'a') keys.left = true;
             if (e.key === 'ArrowRight' || e.key === 'd') keys.right = true;
-            if (e.key === 'ArrowUp' || e.key === 'w') keys.up = true;
-            if (e.key === ' ' && player.onGround) { // Space for Jump
+            // Up key might be used for climbing action later, not jump. Jump is space.
+            // if (e.key === 'ArrowUp' || e.key === 'w') keys.up = true;
+            if (e.key === ' ' && player.onGround) {
                 keys.space = true;
                 player.dy = -player.jumpStrength;
                 player.onGround = false;
@@ -173,7 +169,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (gameState === 'puzzle' && currentPuzzle && currentPuzzle.type === 'simonSays' && !currentPuzzle.isShowingSequence) {
             let inputDir = null;
             if (e.key === 'ArrowUp') inputDir = 'up';
-            if (e.key === 'ArrowDown') inputDir = 'down'; // Add if puzzle uses it
+            if (e.key === 'ArrowDown') inputDir = 'down';
             if (e.key === 'ArrowLeft') inputDir = 'left';
             if (e.key === 'ArrowRight') inputDir = 'right';
             if (inputDir) {
@@ -181,7 +177,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 playerInputDisplay.textContent = currentPuzzle.playerInput.join(', ');
                 checkSimonSaysInput();
             }
-        } else if (gameState === 'dialogue' && e.key === ' ') {
+        } else if (gameState === 'dialogue' && (e.key === ' ' || e.key === 'Enter')) {
             advanceDialogue();
         }
     }
@@ -189,7 +185,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function handleKeyUp(e) {
         if (e.key === 'ArrowLeft' || e.key === 'a') keys.left = false;
         if (e.key === 'ArrowRight' || e.key === 'd') keys.right = false;
-        if (e.key === 'ArrowUp' || e.key === 'w') keys.up = false;
+        // if (e.key === 'ArrowUp' || e.key === 'w') keys.up = false;
         if (e.key === ' ') keys.space = false;
     }
 
@@ -197,33 +193,32 @@ document.addEventListener('DOMContentLoaded', () => {
         if (gameState !== 'playing') return;
 
         // Horizontal movement
-        if (keys.left) player.x -= player.speed;
-        if (keys.right) player.x += player.speed;
+        if (keys.left) player.x -= player.speed * player.climbSpeedModifier;
+        if (keys.right) player.x += player.speed * player.climbSpeedModifier;
 
         // Vertical movement (gravity and jump)
-        player.y += player.dy;
+        player.worldY += player.dy;
         player.dy += player.gravity;
-        player.onGround = false; // Assume not on ground until collision check
+        player.onGround = false;
 
         // Collision with ledges
-        let worldPlayerY = player.y - cameraY;
         gameElements.forEach(el => {
             if (el.type === 'ledge') {
-                const ledgeTop = el.y;
-                const ledgeBottom = el.y + el.height;
+                const ledgeTop = el.worldY;
+                const ledgeBottom = el.worldY + el.height;
                 const ledgeLeft = el.x;
                 const ledgeRight = el.x + el.width;
 
-                // Check collision with top of ledge
-                if (worldPlayerY + player.height > ledgeTop &&
-                    worldPlayerY + player.height < ledgeTop + player.dy + 10 && // Allow some overlap for landing
+                if (player.worldY + player.height > ledgeTop &&
+                    player.worldY + player.height < ledgeTop + player.dy + 15 && // Generous landing
+                    player.dy >= 0 && // Only collide when falling onto it
                     player.x + player.width > ledgeLeft &&
                     player.x < ledgeRight) {
 
                     if (el.requiresRope && !player.hasRope) {
-                         // Can't land, maybe show a message or make it slippery
+                        // Player can't land or slips off - for now, just pass through
                     } else {
-                        player.y = ledgeTop + cameraY - player.height;
+                        player.worldY = ledgeTop - player.height;
                         player.dy = 0;
                         player.onGround = true;
                     }
@@ -231,54 +226,62 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-
-        // Prevent falling off bottom of screen (for now, should be game over)
-        if (player.y - cameraY > CANVAS_HEIGHT - player.height) {
-            player.y = CANVAS_HEIGHT - player.height + cameraY;
-            player.dy = 0;
-            player.onGround = true;
+        // Prevent falling off absolute bottom (initial ground)
+        const groundLevel = CANVAS_HEIGHT - player.height; // This is the effective "0" altitude in world coordinates
+        if (player.worldY > groundLevel) {
+             player.worldY = groundLevel;
+             player.dy = 0;
+             player.onGround = true;
         }
+
 
         // Keep player within horizontal bounds
         if (player.x < 0) player.x = 0;
         if (player.x + player.width > CANVAS_WIDTH) player.x = CANVAS_WIDTH - player.width;
 
-        // Update camera to follow player, but only upwards
-        if (player.y < cameraY + CANVAS_HEIGHT / 3) {
-            cameraY = player.y - CANVAS_HEIGHT / 3;
+        // Update camera to follow player upwards
+        // Player's screen Y = player.worldY - cameraY
+        // We want player's screen Y to be around CANVAS_HEIGHT / 2 or a bit lower
+        // So, player.worldY - cameraY = CANVAS_HEIGHT * 0.6
+        // cameraY = player.worldY - CANVAS_HEIGHT * 0.6
+        let targetCameraY = player.worldY - CANVAS_HEIGHT * 0.6;
+        if (targetCameraY < cameraY || cameraY === 0 && player.worldY < CANVAS_HEIGHT - player.height - 10) { // Only scroll up
+             cameraY = Math.max(SUMMIT_ALTITUDE, targetCameraY); // Don't scroll past summit view
         }
-         // Max camera scroll based on summit
-        if (cameraY < SUMMIT_ALTITUDE) {
-            cameraY = SUMMIT_ALTITUDE;
+        // Ensure camera doesn't go below initial view (0)
+        if (player.worldY > CANVAS_HEIGHT * 0.5) { // If player is near the bottom half of the initial screen
+             cameraY = Math.max(cameraY, 0);
         }
 
 
-        // Check interactions
         checkInteractions();
 
-        // Check summit
         const summit = gameElements.find(el => el.type === 'summit');
-        if (summit && worldPlayerY < summit.y + summit.height &&
+        if (summit && player.worldY + player.height < summit.worldY + summit.height && // Player's feet touch summit platform
+            player.worldY > summit.worldY - player.height && // Player is somewhat above it
             player.x + player.width > summit.x && player.x < summit.x + summit.width) {
             reachSummit();
         }
 
-        // Random Events
         handleRandomEvents();
     }
 
     function checkInteractions() {
-        const worldPlayerY = player.y - cameraY;
         gameElements.forEach(el => {
-            if (player.x < el.x + (el.width || player.width) && player.x + player.width > el.x &&
-                worldPlayerY < el.y + (el.height || player.height) && worldPlayerY + player.height > el.y) {
+            const elTop = el.worldY;
+            const elBottom = el.worldY + (el.height || player.height); // Use el.height if available
+            const elLeft = el.x;
+            const elRight = el.x + (el.width || player.width); // Use el.width if available
+
+            if (player.x < elRight && player.x + player.width > elLeft &&
+                player.worldY < elBottom && player.worldY + player.height > elTop) {
 
                 if (el.type === 'npc' && !el.interacted) {
                     startDialogue(el);
-                    el.interacted = true; // Prevent re-triggering immediately
+                    el.interacted = true;
                 } else if (el.type === 'puzzle_trigger' && !el.completed) {
                     startPuzzle(el);
-                    el.completed = true; // Prevent re-triggering
+                    el.completed = true;
                 }
             }
         });
@@ -293,25 +296,24 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        if (Math.random() < 0.002) { // Small chance each frame
+        if (Math.random() < 0.0015) { // Adjusted chance
             const eventRoll = Math.random();
-            if (eventRoll < 0.4) { // Blizzard
+            if (eventRoll < 0.4 && assets.iconSnowflake) {
                 randomEventActive = 'blizzard';
-                player.climbSpeedModifier = 0.6; // Slower
+                player.climbSpeedModifier = 0.6;
                 eventDisplay.innerHTML = `<img src="${assets.iconSnowflake.src}" alt="Snowflake"> Blizzard! Climbing is harder.`;
-                randomEventTimer = 300; // Duration in frames (5 seconds at 60fps)
-            } else if (eventRoll < 0.7) { // Sunny Spell
+                randomEventTimer = 300;
+            } else if (eventRoll < 0.7 && assets.iconSun) {
                 randomEventActive = 'sunny';
-                player.climbSpeedModifier = 1.3; // Faster
+                player.climbSpeedModifier = 1.3;
                 eventDisplay.innerHTML = `<img src="${assets.iconSun.src}" alt="Sun"> Sunny Spell! Easier climbing!`;
-                randomEventTimer = 240; // 4 seconds
-            } else { // Found energy bar
-                randomEventActive = 'energyBar';
+                randomEventTimer = 240;
+            } else {
+                randomEventActive = 'energyBarFound';
                 player.energy = Math.min(100, player.energy + 25);
                 eventDisplay.innerHTML = `Found an energy bar! Energy +25.`;
-                randomEventTimer = 120; // Show message for 2 seconds
-                 // No modifier change, just clear message after time
-                setTimeout(clearRandomEvent, 2000);
+                randomEventTimer = 120;
+                setTimeout(clearRandomEvent, 2000); // Message clears automatically
             }
         }
     }
@@ -321,8 +323,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         randomEventActive = null;
         eventDisplay.innerHTML = '';
+        randomEventTimer = 0;
     }
-
 
     function startDialogue(npcData) {
         gameState = 'dialogue';
@@ -338,14 +340,14 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         dialogueText.textContent = currentNPC.dialogue[currentNPC.dialogueIndex];
+        dialogueButton.textContent = (currentNPC.dialogueIndex === currentNPC.dialogue.length - 1) ? "Done" : "Next";
         currentNPC.dialogueIndex++;
     }
 
     function endDialogue() {
         dialogueBox.classList.add('hidden');
-        if (currentNPC.item) {
+        if (currentNPC && currentNPC.item) {
             givePlayerItem(currentNPC.item);
-            // Optionally, show a message "You received [item]!"
             eventDisplay.textContent = `Received ${currentNPC.item}!`;
             setTimeout(() => eventDisplay.textContent = '', 2000);
         }
@@ -353,7 +355,6 @@ document.addEventListener('DOMContentLoaded', () => {
         gameState = 'playing';
     }
     dialogueButton.onclick = advanceDialogue;
-
 
     function givePlayerItem(itemType) {
         if (itemType === 'rope') player.hasRope = true;
@@ -363,11 +364,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function startPuzzle(puzzleData) {
         gameState = 'puzzle';
-        currentPuzzle = { ...puzzleData, type: puzzleData.puzzleType }; // Store type
+        currentPuzzle = { ...puzzleData };
         puzzleOverlay.classList.remove('hidden');
         puzzleInstructions.textContent = puzzleData.instruction;
 
-        if (currentPuzzle.type === 'simonSays') {
+        if (currentPuzzle.puzzleType === 'simonSays') {
             generateSimonSaysSequence();
             currentPuzzle.isShowingSequence = true;
             currentPuzzle.playerInput = [];
@@ -377,7 +378,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function generateSimonSaysSequence() {
-        const directions = ['up', 'left', 'right']; // 'down' might be confusing for climbing
+        const directions = ['up', 'left', 'right', 'down'].filter(dir => assets['arrow' + dir.charAt(0).toUpperCase() + dir.slice(1)]);
+        if (directions.length === 0) {
+            console.error("No arrow assets loaded for Simon Says puzzle!");
+            endPuzzle(); return;
+        }
         currentPuzzle.sequence = [];
         for (let i = 0; i < currentPuzzle.sequenceLength; i++) {
             currentPuzzle.sequence.push(directions[Math.floor(Math.random() * directions.length)]);
@@ -387,36 +392,45 @@ document.addEventListener('DOMContentLoaded', () => {
     let sequenceDisplayTimeout;
     function displaySimonSaysSequence(index = 0) {
         clearTimeout(sequenceDisplayTimeout);
-        puzzleSequenceDisplay.innerHTML = ''; // Clear previous
+        puzzleSequenceDisplay.innerHTML = '';
         if (index < currentPuzzle.sequence.length) {
             const dir = currentPuzzle.sequence[index];
-            let arrowImgSrc = '';
-            if (dir === 'up') arrowImgSrc = assets.arrowUp.src;
-            else if (dir === 'left') arrowImgSrc = assets.arrowLeft.src;
-            else if (dir === 'right') arrowImgSrc = assets.arrowRight.src;
-            // else if (dir === 'down') arrowImgSrc = assets.arrowDown.src;
-
-            puzzleSequenceDisplay.innerHTML = `<img src="${arrowImgSrc}" alt="${dir}" class="highlight">`;
-
+            const arrowAssetKey = 'arrow' + dir.charAt(0).toUpperCase() + dir.slice(1);
+            if (!assets[arrowAssetKey] || !assets[arrowAssetKey].complete) {
+                console.error("Missing arrow asset for Simon Says: " + arrowAssetKey);
+                puzzleSequenceDisplay.innerHTML = 'Error displaying sequence.';
+                currentPuzzle.isShowingSequence = false;
+                return;
+            }
+            puzzleSequenceDisplay.innerHTML = `<img src="${assets[arrowAssetKey].src}" alt="${dir}" class="highlight">`;
             sequenceDisplayTimeout = setTimeout(() => {
-                puzzleSequenceDisplay.innerHTML = `<img src="${arrowImgSrc}" alt="${dir}">`; // Remove highlight
-                setTimeout(() => displaySimonSaysSequence(index + 1), 300); // Pause before next
-            }, 700); // How long to show highlighted
+                puzzleSequenceDisplay.innerHTML = `<img src="${assets[arrowAssetKey].src}" alt="${dir}">`;
+                setTimeout(() => displaySimonSaysSequence(index + 1), 300);
+            }, 700);
         } else {
-            puzzleSequenceDisplay.innerHTML = 'Your turn!';
+            puzzleSequenceDisplay.innerHTML = 'Your turn! Use Arrow Keys.';
             currentPuzzle.isShowingSequence = false;
         }
     }
 
     function checkSimonSaysInput() {
         const len = currentPuzzle.playerInput.length;
+        const dir = currentPuzzle.playerInput[len - 1];
+        const arrowAssetKey = 'arrow' + dir.charAt(0).toUpperCase() + dir.slice(1);
+
+        if (!assets[arrowAssetKey] || !assets[arrowAssetKey].complete) {
+             playerInputDisplay.textContent += ` (Unknown key: ${dir})`; // Visual feedback for invalid key
+             currentPuzzle.playerInput.pop(); // Remove invalid input
+             return;
+        }
+
+
         if (currentPuzzle.playerInput[len - 1] !== currentPuzzle.sequence[len - 1]) {
-            // Incorrect input
-            puzzleSequenceDisplay.innerHTML = `Incorrect! Sequence was: ${currentPuzzle.sequence.map(s => `<img src="${assets['arrow'+s.charAt(0).toUpperCase() + s.slice(1)].src}" style="width:20px;height:20px;">`).join('')}. Try again penalty.`;
-            gameTime += 5; // 5 second penalty
+            puzzleSequenceDisplay.innerHTML = `Incorrect! Penalty. Sequence was: ${currentPuzzle.sequence.map(s => `<img src="${assets['arrow'+s.charAt(0).toUpperCase() + s.slice(1)].src}" style="width:20px;height:20px;vertical-align:middle;">`).join(' ')}`;
+            gameTime += 5;
             currentPuzzle.playerInput = [];
             playerInputDisplay.textContent = '';
-            setTimeout(() => { // Reset for another try or just end it. For now, end.
+            setTimeout(() => {
                 puzzleSequenceDisplay.textContent = "Puzzle failed. Moving on.";
                 setTimeout(endPuzzle, 1500);
             }, 2000);
@@ -424,13 +438,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (len === currentPuzzle.sequence.length) {
-            // Correct sequence
             puzzleSequenceDisplay.innerHTML = `Correct! ${currentPuzzle.rewardText || "Well done!"}`;
-            if (currentPuzzle.id === 'puzzle1') player.energy = Math.min(100, player.energy + 30); // Example reward
+            if (currentPuzzle.id === 'puzzle1') player.energy = Math.min(100, player.energy + 30);
             setTimeout(endPuzzle, 2000);
         }
     }
-
 
     function endPuzzle() {
         puzzleOverlay.classList.add('hidden');
@@ -438,18 +450,24 @@ document.addEventListener('DOMContentLoaded', () => {
         gameState = 'playing';
     }
 
-
-    function formatTime(seconds) {
-        const h = Math.floor(seconds / 3600).toString().padStart(2, '0');
-        const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
-        const s = Math.floor(seconds % 60).toString().padStart(2, '0');
+    function formatTime(totalSeconds) {
+        const h = Math.floor(totalSeconds / 3600).toString().padStart(2, '0');
+        const m = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, '0');
+        const s = Math.floor(totalSeconds % 60).toString().padStart(2, '0');
         return `${h}:${m}:${s}`;
     }
 
     function startGameFlow() {
+        console.log("startGameFlow called");
+        if (assetsError) {
+            loadingMessage.innerHTML = "Cannot start game due to asset loading errors. Please check console and fix.";
+            return;
+        }
         resetGame();
         startScreen.classList.add('hidden');
         summitScreen.classList.add('hidden');
+        dialogueBox.classList.add('hidden'); // Ensure dialogue is hidden
+        puzzleOverlay.classList.add('hidden'); // Ensure puzzle is hidden
         gameState = 'playing';
         timerInterval = setInterval(() => {
             if (gameState === 'playing') {
@@ -457,28 +475,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 timerDisplay.textContent = `Time: ${formatTime(gameTime)}`;
             }
         }, 1000);
-        gameLoop();
+        if (!animationFrameId) { // Prevent multiple loops
+            gameLoop();
+        }
     }
 
     function resetGame() {
         player.x = 50;
-        player.y = CANVAS_HEIGHT - 50 - player.height; // Reset y relative to canvas bottom first
+        player.worldY = CANVAS_HEIGHT - 50 - player.height; // Reset worldY to initial ground
         player.dy = 0;
-        player.onGround = false;
+        player.onGround = true; // Start on ground
         player.hasRope = false;
         player.energy = 100;
         player.climbSpeedModifier = 1;
 
-        cameraY = 0; // Reset camera
-        // Re-adjust player's 'absolute' y for the new camera position
-        player.y = (CANVAS_HEIGHT - 50 - player.height) + cameraY;
-
+        cameraY = 0;
 
         gameTime = 0;
         timerDisplay.textContent = `Time: 00:00:00`;
         clearInterval(timerInterval);
 
-        gameElements.forEach(el => { // Reset interacted/completed states
+        gameElements.forEach(el => {
             el.interacted = false;
             el.completed = false;
         });
@@ -487,71 +504,70 @@ document.addEventListener('DOMContentLoaded', () => {
         currentPuzzle = null;
     }
 
-
     function reachSummit() {
+        if (gameState === 'summit') return; // Prevent re-triggering
         gameState = 'summit';
         clearInterval(timerInterval);
         finalTimeDisplay.textContent = formatTime(gameTime);
         summitScreen.classList.remove('hidden');
+        if (animationFrameId) {
+            cancelAnimationFrame(animationFrameId);
+            animationFrameId = null;
+        }
     }
 
     function draw() {
-        // Clear canvas
         ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
         // Draw background (parallax scrolling)
         if (assets.skyBackground && assets.skyBackground.complete) {
-            // Calculate offset for seamless vertical scrolling
             const bgHeight = assets.skyBackground.height;
-            const bgWidth = assets.skyBackground.width; // Assuming it's wider or same as canvas
-             // Tile if narrower, scale if wider. For simplicity, assume it's designed to tile or fit.
-            const yOffset = cameraY % bgHeight;
-            ctx.drawImage(assets.skyBackground, 0, yOffset, CANVAS_WIDTH, CANVAS_HEIGHT, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-            if (yOffset < 0) { // Draw the part that wraps around from the bottom
-                 ctx.drawImage(assets.skyBackground, 0, bgHeight + yOffset, CANVAS_WIDTH, CANVAS_HEIGHT, 0, 0, CANVAS_WIDTH, Math.abs(yOffset));
-            } else if (yOffset > 0 && CANVAS_HEIGHT - yOffset > 0) { // Draw the part that wraps around from the top
-                 ctx.drawImage(assets.skyBackground, 0, 0, CANVAS_WIDTH, yOffset, 0, CANVAS_HEIGHT - yOffset, CANVAS_WIDTH, yOffset);
+            const parallaxFactor = 0.5; // Slower scroll for background
+            const yOffset = (cameraY * parallaxFactor) % bgHeight;
+
+            ctx.drawImage(assets.skyBackground, 0, yOffset, assets.skyBackground.width, bgHeight - yOffset, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT * ((bgHeight - yOffset)/bgHeight) );
+            if (bgHeight - yOffset < CANVAS_HEIGHT) { // Need to draw wrapped part
+                 ctx.drawImage(assets.skyBackground, 0, 0, assets.skyBackground.width, yOffset - (bgHeight - CANVAS_HEIGHT), 0, CANVAS_HEIGHT * ((bgHeight - yOffset)/bgHeight), CANVAS_WIDTH, CANVAS_HEIGHT * ((yOffset - (bgHeight - CANVAS_HEIGHT))/bgHeight) );
             }
+
+
         } else {
-            ctx.fillStyle = '#70c5ce'; // Fallback sky
+            ctx.fillStyle = '#70c5ce';
             ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
         }
 
-
-        // Draw game elements (ledges, npcs, summit flag) relative to camera
         ctx.save();
-        ctx.translate(0, -cameraY);
+        ctx.translate(0, -cameraY); // Apply camera transformation
 
         gameElements.forEach(el => {
-            const elScreenY = el.y; // y is already world y for elements
-            if (elScreenY > cameraY + CANVAS_HEIGHT || elScreenY + (el.height || 50) < cameraY) {
-                return; // Don't draw if off-screen
+            const elScreenY = el.worldY;
+            const elHeight = el.height || 50; // Default height if not specified
+            // Basic culling
+            if (elScreenY > cameraY + CANVAS_HEIGHT || elScreenY + elHeight < cameraY) {
+                return;
             }
 
             if (el.type === 'ledge') {
                 if (assets.ledgeRock && assets.ledgeRock.complete) {
-                    // Tile the ledge image
                     for (let i = 0; i < el.width; i += assets.ledgeRock.width) {
-                        ctx.drawImage(assets.ledgeRock, el.x + i, elScreenY, Math.min(assets.ledgeRock.width, el.width - i), el.height);
+                        const w = Math.min(assets.ledgeRock.width, el.width - i);
+                        ctx.drawImage(assets.ledgeRock, 0, 0, w / assets.ledgeRock.width * assets.ledgeRock.width , assets.ledgeRock.height, el.x + i, elScreenY, w, el.height);
                     }
                 } else {
-                    ctx.fillStyle = el.requiresRope && !player.hasRope ? '#FF8888' : '#8B4513'; // Brown or red if needs rope
+                    ctx.fillStyle = '#8B4513';
                     ctx.fillRect(el.x, elScreenY, el.width, el.height);
                 }
                 if (el.requiresRope && !player.hasRope) {
-                    ctx.fillStyle = "yellow";
-                    ctx.font = "12px Arial";
+                    ctx.fillStyle = "yellow"; ctx.font = "12px Arial";
                     ctx.fillText("Rope needed!", el.x, elScreenY - 5);
                 }
-
             } else if (el.type === 'npc' && assets.npcGuide && assets.npcGuide.complete) {
-                ctx.drawImage(assets.npcGuide, el.x, elScreenY - el.height || assets.npcGuide.height, assets.npcGuide.width, assets.npcGuide.height); // draw npc above its y point
-                 if (!el.interacted) {
-                    ctx.fillStyle = "white"; ctx.font = "14px Arial"; ctx.fillText("!", el.x + assets.npcGuide.width/2 - 3, elScreenY - (el.height || assets.npcGuide.height) - 5);
-                 }
+                ctx.drawImage(assets.npcGuide, el.x, elScreenY, el.width, el.height);
+                if (!el.interacted) {
+                    ctx.fillStyle = "white"; ctx.font = "14px Arial"; ctx.fillText("!", el.x + el.width / 2 - 3, elScreenY - 5);
+                }
             } else if (el.type === 'puzzle_trigger' && !el.completed) {
-                ctx.fillStyle = 'gold';
-                ctx.fillRect(el.x, elScreenY, 30, 30); // Simple marker for puzzle
+                ctx.fillStyle = 'gold'; ctx.fillRect(el.x, elScreenY, el.width, el.height);
                 ctx.fillStyle = "black"; ctx.font = "20px Arial"; ctx.fillText("?", el.x + 8, elScreenY + 22);
             } else if (el.type === 'summit' && assets.summitFlag && assets.summitFlag.complete) {
                 ctx.drawImage(assets.summitFlag, el.x, elScreenY, el.width, el.height);
@@ -559,44 +575,54 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         // Draw Player
+        const playerScreenY = player.worldY;
         if (assets.playerIdle && assets.playerIdle.complete) {
-            ctx.drawImage(assets.playerIdle, player.x, player.y, player.width, player.height);
+            ctx.drawImage(assets.playerIdle, player.x, playerScreenY, player.width, player.height);
         } else {
             ctx.fillStyle = 'blue';
-            ctx.fillRect(player.x, player.y, player.width, player.height);
+            ctx.fillRect(player.x, playerScreenY, player.width, player.height);
         }
-        ctx.restore(); // Restore transform for UI elements that are fixed
+        ctx.restore(); // Restore transform
     }
 
-
+    let animationFrameId = null;
     function gameLoop() {
-        if (gameState === 'startScreen' || gameState === 'summit') {
-            // Don't run game logic if on these screens, but still draw canvas if needed for background
-            if (gameState === 'startScreen' && assets.skyBackground && assets.skyBackground.complete) {
-                 ctx.drawImage(assets.skyBackground, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        if (gameState === 'startScreen') {
+            // Draw static start screen background if needed, but mostly handled by HTML/CSS
+            if (assets.skyBackground && assets.skyBackground.complete && !assetsError) {
+                ctx.drawImage(assets.skyBackground, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            } else if (!assetsError) {
+                ctx.fillStyle = '#70c5ce'; ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
             }
+             // No animation frame request here, wait for button.
             return;
         }
-        if (gameState === 'playing') {
-             updatePlayer();
+        if (gameState === 'summit') {
+            // Potentially draw final summit scene on canvas or let HTML overlay handle it
+            return; // Stop game loop
         }
+
+        if (gameState === 'playing') {
+            updatePlayer();
+        }
+        // For 'dialogue' or 'puzzle', game logic pauses, but drawing continues
         draw();
-        requestAnimationFrame(gameLoop);
+        animationFrameId = requestAnimationFrame(gameLoop);
     }
 
     // Event Listeners
     startButton.onclick = startGameFlow;
-    playAgainButton.onclick = startGameFlow;
+    playAgainButton.onclick = () => {
+        summitScreen.classList.add('hidden');
+        startScreen.classList.remove('hidden'); // Go back to start screen
+        resetGame(); // Reset game state fully for a fresh start
+        gameState = 'startScreen';
+        gameLoop(); // Redraw initial start screen canvas if needed
+    };
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
 
     // Initial Load
     loadAssets();
-    // Draw something on canvas for start screen background if desired
-    if (assets.skyBackground && assets.skyBackground.complete) {
-        ctx.drawImage(assets.skyBackground, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-    } else {
-        ctx.fillStyle = '#70c5ce';
-        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-    }
+    gameLoop(); // Call once to draw initial start screen background if assets are ready fast enough or fallback
 });
