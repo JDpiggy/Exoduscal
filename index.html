@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mount Moosejaw</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas"></canvas>
+        <div id="uiOverlay">
+            <div id="timerDisplay">Time: 00:00:00</div>
+            <div id="eventDisplay"></div>
+        </div>
+        <div id="dialogueBox" class="hidden">
+            <p id="dialogueText"></p>
+            <button id="dialogueButton">Next</button>
+        </div>
+        <div id="puzzleOverlay" class="hidden">
+            <p id="puzzleInstructions"></p>
+            <div id="puzzleSequenceDisplay"></div>
+            <p>Your input: <span id="playerInputDisplay"></span></p>
+            <p>(Use Arrow Keys)</p>
+        </div>
+        <div id="startScreen" class="screen">
+            <h1>Mount Moosejaw</h1>
+            <p>Reach the summit as fast as you can!</p>
+            <p>Controls: Arrow Keys to Move, Space to Jump/Interact.</p>
+            <button id="startButton">Start Climbing</button>
+            <p id="loadingMessage">Loading assets...</p>
+        </div>
+        <div id="summitScreen" class="screen hidden">
+            <h1>Summit Reached!</h1>
+            <p>Your Time: <span id="finalTimeDisplay"></span></p>
+            <button id="playAgainButton">Climb Again</button>
+        </div>
+    </div>
+    <script src="game.js"></script>
+</body>
+</html>
